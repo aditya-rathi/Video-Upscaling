@@ -1,3 +1,4 @@
+from cmath import tanh
 from matplotlib.image import imsave
 import torch
 import torch.nn as nn
@@ -11,42 +12,32 @@ from os import listdir
 from PIL import Image
 from torch.nn import functional
 import matplotlib.pyplot as plt
+import random
 
 train_on_gpu = torch.cuda.is_available()
-
-# Change for PSNR
-def accuracy(model,testloader):
-    correct = 0 
-    total = 0
-    for data in testloader:
-            images, labels = data
-            if train_on_gpu:
-                images, labels = images.cuda(), labels.cuda()
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    print('acc = %.3f' %(correct/total))
 
 class TrainDataset(Dataset):
     def __init__(self,dataset_dir):
         super(TrainDataset, self).__init__()
         self.image_filenames = [join(dataset_dir, x) for x in listdir(dataset_dir)]
         self.lr_transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Grayscale(),
             transforms.Resize((100,100)),
-            transforms.ToTensor()])
+            transforms.ToTensor()
+            ])
         self.hr_transform = transforms.Compose([
-            transforms.Grayscale(),
             transforms.Resize((200,200)),
-            transforms.ToTensor()])
+            transforms.ToTensor()
+            ])
     
     def __getitem__(self, index):
-        hr_image = self.hr_transform(Image.open(self.image_filenames[index]))
-        lr_image = self.lr_transform(hr_image)
+        hr_image = Image.open(self.image_filenames[index])
+        hr_image = hr_image.convert("YCbCr")
+        hr_image = self.hr_transform(hr_image)
+        lr_image = Image.open(self.image_filenames[index])
+        lr_image = lr_image.convert('YCbCr')
+        lr_image = self.lr_transform(lr_image)
         return lr_image, hr_image
-    
+
     def __len__(self):
         return len(self.image_filenames)
 
@@ -55,8 +46,11 @@ class CNN(nn.Module):
         super(CNN, self).__init__()
         self.conv_layer = nn.Sequential(
         nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        nn.Tanh(),
         nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        nn.Tanh(),
         nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        nn.Tanh(),
         nn.Conv2d(128, 1 * (2 ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
         )
     
@@ -67,23 +61,48 @@ class CNN(nn.Module):
 
         return outputs
 
+def upscale_image(epoch,fname,model):
+    img = Image.open('train_data/291/'+fname)
+    lr_transform = transforms.Resize((100,100))
+    hr_transform = transforms.Resize((200,200))
+    tensorize = transforms.ToTensor()
+    lr_image = lr_transform(img)
+    lr_image = lr_image.convert("YCbCr")
+    lr_y,lr_cb,lr_cr = lr_image.split()
+    hr_image = hr_transform(img)
+    lr_y = tensorize(lr_y)
+    with torch.no_grad():
+        output = model(torch.unsqueeze(lr_y,1).cuda())
+    output = output[0,0].cpu().numpy()
+    output *=255.0
+    output = output.clip(0,255)
+    output = Image.fromarray(np.uint8(output),mode="L")
+    lr_cb = lr_cb.resize((200,200),Image.BICUBIC)
+    lr_cr = lr_cr.resize((200,200),Image.BICUBIC)
+    output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
+    ground_name = 'data/'+str(epoch)+'_ground.png'
+    output_name = 'data/'+str(epoch)+'_output.png'
+    hr_image.save(ground_name)
+    output.save(output_name)
+
 def main():
     
     trainset = TrainDataset('train_data/291/')
-    trainloader = DataLoader(trainset,shuffle=True,batch_size=3)
+    trainloader = DataLoader(trainset,shuffle=True,batch_size=12)
     criterion = nn.MSELoss()
     model = CNN()
 
     if train_on_gpu:
         model.cuda()
-    optimizer = optim.Adam(model.parameters(), lr=1e-2)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
     num_epoch = 200
     for epoch in range(num_epoch):  # loop over the dataset multiple times
         print('Epoch = %2d'%epoch)
         for i, data in enumerate(trainloader, 0):
             # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+            lr_image,hr_image = data
+            inputs, labels = torch.unsqueeze(lr_image[:,0,:,:],1),torch.unsqueeze(hr_image[:,0,:,:],1)
             if train_on_gpu:
                 inputs, labels = inputs.cuda(), labels.cuda()
 
@@ -95,15 +114,23 @@ def main():
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-        scheduler.step()
-        ground_name = 'data/'+str(epoch)+'_ground.png'
-        output_name = 'data/'+str(epoch)+'_output.png'
-        o_img = outputs[0,0,:,:].detach()
-        #o_img*=255
-        plt.imsave(ground_name,labels[0,0,:,:].detach(),cmap='gray')
-        plt.imsave(output_name,o_img,cmap='gray')
+        print(loss.item())    
+        scheduler.step(loss.item())
+
+        upscale_image(epoch,random.choice(listdir('train_data/291/')),model)
+
+        # ground_name = 'data/'+str(epoch)+'_ground.png'
+        # output_name = 'data/'+str(epoch)+'_output.png'
+        # o_img = ((outputs[0,0,:,:].detach()).cpu()).numpy()
+        # o_img*=255
+        # o_img = np.clip(o_img,0,255)
+        # o_img = np.uint8(o_img)
+        
+        # plt.imsave(ground_name,labels[0,0,:,:].detach(),cmap='gray')
+        # plt.imsave(output_name,o_img,cmap='gray')
 
     print('Finished Training')
+    torch.save(model.state_dict(),'model.pt')
 
 if __name__ == "__main__":
     main()
