@@ -58,7 +58,6 @@ class CNN(nn.Module):
         # conv layers
         x = self.conv_layer(x)
         outputs = functional.pixel_shuffle(x, 2)
-
         return outputs
 
 def upscale_image(epoch,fname,model):
@@ -85,13 +84,7 @@ def upscale_image(epoch,fname,model):
     hr_image.save(ground_name)
     output.save(output_name)
 
-def main():
-    
-    trainset = TrainDataset('train_data/291/')
-    trainloader = DataLoader(trainset,shuffle=True,batch_size=12)
-    criterion = nn.MSELoss()
-    model = CNN()
-
+def train_mod(model,criterion,trainloader):
     if train_on_gpu:
         model.cuda()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
@@ -131,6 +124,19 @@ def main():
 
     print('Finished Training')
     torch.save(model.state_dict(),'model.pt')
+
+def data_loader():
+    trainset = TrainDataset('train_data/291/')
+    trainloader = DataLoader(trainset,shuffle=True,batch_size=12)
+    criterion = nn.MSELoss()
+    model = CNN()
+    return model,criterion,trainloader
+
+def main():
+
+    model,criterion,trainloader = data_loader()    
+    train_mod(model,criterion,trainloader)
+    
 
 if __name__ == "__main__":
     main()
