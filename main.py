@@ -9,7 +9,9 @@ from os.path import join
 from os import listdir
 from PIL import Image
 from torch.nn import functional
+from utils import *
 import random
+import time
 
 train_on_gpu = torch.cuda.is_available()
 
@@ -66,15 +68,19 @@ class Image_Upscaler():
         self.dataset_dir = dataset_dir
         self.criterion = criterion
         self.model = model(upscale_factor)
-        self.lr_size = lr_size
-        self.hr_size = tuple(x*upscale_factor for x in lr_size)
+        self.lr_size = (lr_size[1],lr_size[0])
+        self.hr_size = tuple(x*upscale_factor for x in self.lr_size)
+        self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
         self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size)
         self.train_on_gpu = torch.cuda.is_available()
         
-    def upscale_image(self,epoch,fname):
-        img = Image.open(self.dataset_dir+fname)
-        lr_transform = transforms.Resize(self.lr_size)
+    def upscale_image(self,epoch,image=None,fname=None):
+        if image is None:
+            img = Image.open(self.dataset_dir+fname)
+        elif fname is None:
+            img = Image.fromarray(image)
+        lr_transform = transforms.Resize(self.lr_size) #Resize takes input as height,width
         hr_transform = transforms.Resize(self.hr_size)
         tensorize = transforms.ToTensor()
         lr_image = lr_transform(img)
@@ -91,12 +97,12 @@ class Image_Upscaler():
         output *=255.0
         output = output.clip(0,255)
         output = Image.fromarray(np.uint8(output),mode="L")
-        lr_cb = lr_cb.resize(self.hr_size,Image.BICUBIC)
-        lr_cr = lr_cr.resize(self.hr_size,Image.BICUBIC)
+        lr_cb = lr_cb.resize(self.col_size,Image.BICUBIC)
+        lr_cr = lr_cr.resize(self.col_size,Image.BICUBIC)
         output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
         ground_name = 'output/'+str(epoch)+'_ground.png'
-        output_name = 'output/'+str(epoch)+'_output.png'
-        hr_image.save(ground_name)
+        output_name = 'temp/'+str(epoch)+'_output.png'
+        #hr_image.save(ground_name)
         output.save(output_name)
 
     def train_mod(self):
@@ -124,7 +130,7 @@ class Image_Upscaler():
             print(loss.item())    
             scheduler.step(loss.item())
 
-            self.upscale_image(epoch,random.choice(listdir(self.dataset_dir)))
+            self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
 
 
         print('Finished Training')
@@ -132,15 +138,33 @@ class Image_Upscaler():
     
     def load_checkpoint(self,path):
         self.model.load_state_dict = (torch.load(path))
+        self.model.cuda()
     
 
 if __name__ == "__main__":
-    dataset_dir = 'train_data/291/'
-    lr_size = (100,100)
+    video = VideoReader("test_vid_360.mp4")
+    dataset_dir = 'train2/'
+    lr_size = (video.width,video.height)
+    #lr_size = (102,100)
     upscale_factor = 2
     batch_size = 12
     criterion = nn.MSELoss()
     model = CNN
+    test_mode = 1
 
     upscaler = Image_Upscaler(dataset_dir, lr_size, upscale_factor, batch_size, criterion, model)
-    upscaler.train_mod()
+
+    if test_mode==1:
+        upscaler.load_checkpoint("model.pt")
+        for frame_idx in range(video.num_frames):
+            #print(frame_idx)
+            old_time = time.time()
+            frame = video.get_frame()
+            frame_upscaled = upscaler.upscale_image(frame_idx,frame)
+            print(f"time taken = {time.time()-old_time:.2f}")
+        video.complete()
+        
+
+    else:
+        upscaler.load_checkpoint("model.pt")
+        upscaler.train_mod()

@@ -8,3 +8,7 @@ train_data/91/
 __pycache__/
 
 output/
+
+temp/
+
+train2/
