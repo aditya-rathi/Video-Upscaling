@@ -12,6 +12,7 @@ from torch.nn import functional
 from utils import *
 import random
 import time
+from torchinfo import summary
 
 train_on_gpu = torch.cuda.is_available()
 
@@ -42,25 +43,39 @@ class TrainDataset(Dataset):
     def __len__(self):
         return len(self.image_filenames)
 
+class CReLU(nn.Module):
+
+    def __init__(self, inplace=False):
+        super(CReLU, self).__init__()
+
+    def forward(self, x):
+        x = torch.cat((x,-x),1)
+        return functional.relu(x)
+
 class CNN(nn.Module):  
     def __init__(self,upscale_factor):
         super(CNN, self).__init__()
+        self.crelu = CReLU()
+        self.block_depth = 7
+        self.mid_depth = 4
         self.upscale_factor = upscale_factor
-        self.conv_layer = nn.Sequential(
-        nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.Tanh(),
-        nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.Tanh(),
-        nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.Tanh(),
-        nn.Conv2d(128, 1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        )
-        
+        self.conv_block=[]
+        for i in range(self.block_depth):
+            self.conv_block.append(nn.Sequential(nn.Conv2d(1,self.mid_depth,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+                                        CReLU()))
+        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth,1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
     
     def forward(self, x):
         # conv layers
-        x = self.conv_layer(x)
+        old_x = x
+        depth_list = []
+        for i in range(self.block_depth):
+            x = self.conv_block[i](x)
+            depth_list.append(x)
+        x = torch.cat(depth_list,axis=-1)
+        x = self.upscaler(x)
         outputs = functional.pixel_shuffle(x, self.upscale_factor)
+        outputs = outputs+functional.upsample(old_x,scale_factor=2,mode='bilinear')
         return outputs
 
 class Image_Upscaler():
@@ -150,7 +165,7 @@ if __name__ == "__main__":
     batch_size = 12
     criterion = nn.MSELoss()
     model = CNN
-    test_mode = 1
+    test_mode = 0
 
     upscaler = Image_Upscaler(dataset_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
@@ -164,7 +179,6 @@ if __name__ == "__main__":
             print(f"time taken = {time.time()-old_time:.2f}")
         video.complete()
         
-
     else:
-        upscaler.load_checkpoint("model.pt")
+        #upscaler.load_checkpoint("model.pt")
         upscaler.train_mod()
