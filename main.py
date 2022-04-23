@@ -59,23 +59,27 @@ class CNN(nn.Module):
         self.block_depth = 7
         self.mid_depth = 4
         self.upscale_factor = upscale_factor
-        self.conv_block=[]
+        self.conv_layer = nn.Conv2d(1,self.mid_depth*2,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_block=nn.ModuleList()
         for i in range(self.block_depth):
-            self.conv_block.append(nn.Sequential(nn.Conv2d(1,self.mid_depth,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            self.conv_block.append(nn.Sequential(nn.Conv2d(self.mid_depth*2,self.mid_depth,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
                                         CReLU()))
-        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth,1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth*2,1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
     
     def forward(self, x):
         # conv layers
         old_x = x
         depth_list = []
+        x = self.conv_layer(x)
         for i in range(self.block_depth):
+            
             x = self.conv_block[i](x)
+            
             depth_list.append(x)
-        x = torch.cat(depth_list,axis=-1)
+        x = torch.cat(depth_list,axis=1)
         x = self.upscaler(x)
         outputs = functional.pixel_shuffle(x, self.upscale_factor)
-        outputs = outputs+functional.upsample(old_x,scale_factor=2,mode='bilinear')
+        outputs = outputs+functional.interpolate(old_x,scale_factor=2,mode='bilinear')
         return outputs
 
 class Image_Upscaler():
@@ -128,6 +132,7 @@ class Image_Upscaler():
         num_epoch = 200
         for epoch in range(num_epoch):  # loop over the dataset multiple times
             print('Epoch = %2d'%epoch)
+            optimizer.zero_grad()
             for _, data in enumerate(self.trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data
@@ -135,7 +140,7 @@ class Image_Upscaler():
                     inputs, labels = inputs.cuda(), labels.cuda()
 
                 # zero the parameter gradients
-                optimizer.zero_grad()
+                
 
                 # forward + backward + optimize
                 outputs = self.model(inputs)
