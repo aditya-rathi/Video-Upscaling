@@ -12,3 +12,15 @@ output/
 temp/
 
 train2/
+
+Synla-Plus/
+
+Synla-1024/
+
+Synla-4096/
+
+Dataset_Color_1024.tar
+
+Dataset_Color_4096.tar
+
+Synla-result/

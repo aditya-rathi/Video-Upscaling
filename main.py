@@ -91,7 +91,7 @@ class Image_Upscaler():
         self.hr_size = tuple(x*upscale_factor for x in self.lr_size)
         self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
-        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size)
+        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size,num_workers=12)
         self.train_on_gpu = torch.cuda.is_available()
         
     def upscale_image(self,epoch,image=None,fname=None):
@@ -119,38 +119,34 @@ class Image_Upscaler():
         lr_cb = lr_cb.resize(self.col_size,Image.BICUBIC)
         lr_cr = lr_cr.resize(self.col_size,Image.BICUBIC)
         output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
-        ground_name = 'output/'+str(epoch)+'_ground.png'
-        output_name = 'temp/'+str(epoch)+'_output.png'
+        ground_name = 'Synla-result/'+str(epoch)+'_ground.png'
+        output_name = 'test/'+str(epoch)+'_output.png'
         #hr_image.save(ground_name)
         output.save(output_name)
 
     def train_mod(self):
         if train_on_gpu:
             self.model.cuda()
-        optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
         num_epoch = 200
         for epoch in range(num_epoch):  # loop over the dataset multiple times
             print('Epoch = %2d'%epoch)
-            optimizer.zero_grad()
+            optimizer.zero_grad()   # zero the parameter gradients
             for _, data in enumerate(self.trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data
                 if train_on_gpu:
                     inputs, labels = inputs.cuda(), labels.cuda()
-
-                # zero the parameter gradients
-                
-
                 # forward + backward + optimize
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-            print(loss.item())    
+            print(loss.item())
             scheduler.step(loss.item())
-
-            self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
+            if epoch%20==0:
+                self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
 
 
         print('Finished Training')
@@ -163,14 +159,14 @@ class Image_Upscaler():
 
 if __name__ == "__main__":
     video = VideoReader("test_vid_360.mp4")
-    dataset_dir = 'train2/'
+    dataset_dir = 'Synla-4096/'
     lr_size = (video.width,video.height)
-    #lr_size = (102,100)
+    #lr_size = (128,128)
     upscale_factor = 2
-    batch_size = 12
+    batch_size = 128
     criterion = nn.MSELoss()
     model = CNN
-    test_mode = 0
+    test_mode = 1
 
     upscaler = Image_Upscaler(dataset_dir, lr_size, upscale_factor, batch_size, criterion, model)
 

@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import ffmpeg
 
 class VideoReader():
     def __init__(self, path):
@@ -21,3 +22,10 @@ class VideoReader():
     def complete(self):
         self.vid.release()
 
+class Videowriter():
+    def __init__(self,path):
+        self.dir = path
+    
+    def write_vid(self):
+        stream = ffmpeg.input('path',r=30)
+        ffmpeg.output(stream,'output.mp4')
