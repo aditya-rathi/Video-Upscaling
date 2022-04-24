@@ -83,15 +83,16 @@ class CNN(nn.Module):
         return outputs
 
 class Image_Upscaler():
-    def __init__(self, dataset_dir, lr_size, upscale_factor, batch_size, criterion, model):
+    def __init__(self, dataset_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model):
         self.dataset_dir = dataset_dir
+        self.out_dir = out_dir
         self.criterion = criterion
         self.model = model(upscale_factor)
         self.lr_size = (lr_size[1],lr_size[0])
         self.hr_size = tuple(x*upscale_factor for x in self.lr_size)
         self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
-        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size,num_workers=12)
+        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size,num_workers=0)
         self.train_on_gpu = torch.cuda.is_available()
         
     def upscale_image(self,epoch,image=None,fname=None):
@@ -120,7 +121,7 @@ class Image_Upscaler():
         lr_cr = lr_cr.resize(self.col_size,Image.BICUBIC)
         output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
         ground_name = 'Synla-result/'+str(epoch)+'_ground.png'
-        output_name = 'test/'+str(epoch)+'_output.png'
+        output_name = self.out_dir+str(epoch)+'_output.png'
         #hr_image.save(ground_name)
         output.save(output_name)
 
@@ -159,16 +160,17 @@ class Image_Upscaler():
 
 if __name__ == "__main__":
     video = VideoReader("test_vid_360.mp4")
-    dataset_dir = 'Synla-4096/'
-    lr_size = (video.width,video.height)
-    #lr_size = (128,128)
+    dataset_dir = 'synla_4096/'
+    #lr_size = (video.width,video.height)
+    lr_size = (128,128)
     upscale_factor = 2
-    batch_size = 128
-    criterion = nn.MSELoss()
+    batch_size = 64
+    criterion = nn.MSELoss(reduction='sum')
     model = CNN
-    test_mode = 1
+    test_mode = 0
+    out_dir = 'temp/'
 
-    upscaler = Image_Upscaler(dataset_dir, lr_size, upscale_factor, batch_size, criterion, model)
+    upscaler = Image_Upscaler(dataset_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
     if test_mode==1:
         upscaler.load_checkpoint("model.pt")
@@ -179,6 +181,8 @@ if __name__ == "__main__":
             frame_upscaled = upscaler.upscale_image(frame_idx,frame)
             print(f"time taken = {time.time()-old_time:.2f}")
         video.complete()
+        final_vid = VideoWriter('/home/aditya/Documents/CMU Sem 2/Deep-Learning/Video-Upscaling/video_synla_bw/%d_output.png','bw_vid.mp4')
+        final_vid.write_vid()
         
     else:
         #upscaler.load_checkpoint("model.pt")
