@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import ffmpeg
 import os
+import matplotlib.pyplot as plt
 
 class VideoReader():
     def __init__(self, path):
@@ -36,24 +37,9 @@ class VideoWriter():
         )    
 
 
-        
-
-# class VideoWriter():
-#     def __init__(self,path):
-#         self.path = path
-         
-#     def compile_frames(self):
-#         img_array = []
-#         for filename in sorted(glob.glob(self.path)):
-#             print(filename)
-#             img = cv2.imread(filename)
-#             height, width, layers = img.shape
-#             size = (width,height)
-#             img_array.append(img)
-    
-    
-#         out = cv2.VideoWriter('/home/aditya/Documents/CMU Sem 2/Deep-Learning/Video-Upscaling/project.avi',cv2.VideoWriter_fourcc(*'X264'), 30, size)
-        
-#         for i in range(len(img_array)):
-#             out.write(img_array[i])
-#         out.release()
+def loss_plotter(loss_list):
+    plt.plot(range(1,len(loss_list)+1),loss_list)
+    plt.xlabel('Epochs')
+    plt.ylabel('Average Loss Per Pixel')
+    plt.title('Loss per pixel vs Epochs')
+    plt.show()

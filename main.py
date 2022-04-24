@@ -13,6 +13,7 @@ from utils import *
 import random
 import time
 from torchinfo import summary
+from torchvision.transforms import InterpolationMode
 
 train_on_gpu = torch.cuda.is_available()
 
@@ -21,11 +22,11 @@ class TrainDataset(Dataset):
         super(TrainDataset, self).__init__()
         self.image_filenames = [join(dataset_dir, x) for x in listdir(dataset_dir)]
         self.lr_transform = transforms.Compose([
-            transforms.Resize(lr_size),
+            transforms.Resize(lr_size,interpolation=InterpolationMode.BICUBIC),
             transforms.ToTensor()
             ])
         self.hr_transform = transforms.Compose([
-            transforms.Resize(hr_size),
+            transforms.Resize(hr_size,interpolation=InterpolationMode.BICUBIC),
             transforms.ToTensor()
             ])
     
@@ -92,18 +93,20 @@ class Image_Upscaler():
         self.hr_size = tuple(x*upscale_factor for x in self.lr_size)
         self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
-        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size,num_workers=0)
+        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=batch_size,num_workers=12)
         self.train_on_gpu = torch.cuda.is_available()
         
     def upscale_image(self,epoch,image=None,fname=None):
         if image is None:
             img = Image.open(self.dataset_dir+fname)
+            lr_transform = transforms.Resize(self.lr_size,interpolation=InterpolationMode.BICUBIC) #Resize takes input as height,width
+            lr_image = lr_transform(img)
         elif fname is None:
             img = Image.fromarray(image)
-        lr_transform = transforms.Resize(self.lr_size) #Resize takes input as height,width
-        hr_transform = transforms.Resize(self.hr_size)
+            lr_image = img
+        hr_transform = transforms.Resize(self.hr_size,interpolation=InterpolationMode.BICUBIC)
         tensorize = transforms.ToTensor()
-        lr_image = lr_transform(img)
+        
         lr_image = lr_image.convert("YCbCr")
         lr_y,lr_cb,lr_cr = lr_image.split()
         hr_image = hr_transform(img)
@@ -120,9 +123,9 @@ class Image_Upscaler():
         lr_cb = lr_cb.resize(self.col_size,Image.BICUBIC)
         lr_cr = lr_cr.resize(self.col_size,Image.BICUBIC)
         output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
-        ground_name = 'Synla-result/'+str(epoch)+'_ground.png'
+        ground_name = self.out_dir+str(epoch)+'_ground.png'
         output_name = self.out_dir+str(epoch)+'_output.png'
-        #hr_image.save(ground_name)
+        hr_image.save(ground_name)
         output.save(output_name)
 
     def train_mod(self):
@@ -131,6 +134,7 @@ class Image_Upscaler():
         optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
         num_epoch = 200
+        loss_list = []
         for epoch in range(num_epoch):  # loop over the dataset multiple times
             print('Epoch = %2d'%epoch)
             optimizer.zero_grad()   # zero the parameter gradients
@@ -144,14 +148,19 @@ class Image_Upscaler():
                 loss = self.criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-            print(loss.item())
-            scheduler.step(loss.item())
-            if epoch%20==0:
+            loss_per_pixel = loss.item()/(self.hr_size[0]*self.hr_size[1])
+            print(f'{loss_per_pixel:.5f}')
+            scheduler.step(loss_per_pixel)
+            loss_list.append(loss_per_pixel)
+            if (epoch+1)%20==0:
                 self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
-
 
         print('Finished Training')
         torch.save(self.model.state_dict(),'model.pt')
+
+        #Plot loss vs epochs
+        loss_plotter(loss_list)
+        np.save('training_loss',np.array(loss_list))
     
     def load_checkpoint(self,path):
         self.model.load_state_dict = (torch.load(path))
@@ -159,16 +168,15 @@ class Image_Upscaler():
     
 
 if __name__ == "__main__":
-    video = VideoReader("test_vid_360.mp4")
-    dataset_dir = 'synla_4096/'
-    #lr_size = (video.width,video.height)
-    lr_size = (128,128)
+    video = VideoReader("test2-360.mp4")
+    dataset_dir = 'Synla-4096/'
     upscale_factor = 2
-    batch_size = 64
+    batch_size = 128
     criterion = nn.MSELoss(reduction='sum')
     model = CNN
-    test_mode = 0
-    out_dir = 'temp/'
+    test_mode = 1
+    lr_size = (128,128) if test_mode==0 else (video.width,video.height)
+    out_dir = 'amv-test/'
 
     upscaler = Image_Upscaler(dataset_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
@@ -179,9 +187,9 @@ if __name__ == "__main__":
             old_time = time.time()
             frame = video.get_frame()
             frame_upscaled = upscaler.upscale_image(frame_idx,frame)
-            print(f"time taken = {time.time()-old_time:.2f}")
+            print(f"time taken = {time.time()-old_time:.3f}")
         video.complete()
-        final_vid = VideoWriter('/home/aditya/Documents/CMU Sem 2/Deep-Learning/Video-Upscaling/video_synla_bw/%d_output.png','bw_vid.mp4')
+        final_vid = VideoWriter(out_dir+'/%d_output.png','/amv_upscaled.mp4')
         final_vid.write_vid()
         
     else:
