@@ -14,6 +14,7 @@ import random
 import time
 from torchinfo import summary
 from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as Fv
 from torchvision import models
 from torchvision.models.feature_extraction import create_feature_extractor
 
@@ -78,13 +79,17 @@ class TrainDataset(Dataset):
     def __getitem__(self, index):
         hr_image = Image.open(self.image_filenames[index])
         hr_image = hr_image.convert("YCbCr")
-        hr_image,_,_ = hr_image.split()
+        hr_image,hr_cb,hr_cr = hr_image.split()
+        hr_cb = hr_cb.resize((256,256),Image.BICUBIC)
+        hr_cr = hr_cr.resize((256,256),Image.BICUBIC)
         hr_image = self.hr_transform(hr_image)
         lr_image = Image.open(self.image_filenames[index])
         lr_image = lr_image.convert('YCbCr')
-        lr_image,_,_ = lr_image.split()
+        lr_image,lr_cb,lr_cr = lr_image.split()
+        lr_cb = lr_cb.resize((256,256),Image.BICUBIC)
+        lr_cr = lr_cr.resize((256,256),Image.BICUBIC)
         lr_image = self.lr_transform(lr_image)
-        return lr_image, hr_image
+        return lr_image, Fv.to_tensor(lr_cb), Fv.to_tensor(lr_cr), hr_image, Fv.to_tensor(hr_cb), Fv.to_tensor(hr_cr)
 
     def __len__(self):
         return len(self.image_filenames)
@@ -191,11 +196,13 @@ class Image_Upscaler():
             loss_per_pixel = 0
             for _, data in enumerate(self.trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
+                inputs, lr_cb, lr_cr, labels, hr_cb, hr_cr = data
                 if train_on_gpu:
                     inputs, labels = inputs.cuda(), labels.cuda()
                 # forward + backward + optimize
                 outputs = self.model(inputs)
+                outputs = torch.cat([outputs,lr_cb,lr_cr],dim=1)
+                labels = torch.cat([labels,hr_cb,hr_cr],dim=1)
                 loss = self.criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
@@ -208,23 +215,6 @@ class Image_Upscaler():
             #Visualize every 20 epochs
             if (epoch+1)%20==0:
                 self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
-            
-            loss_per_pixel = 0
-            #validation at end of every epoch
-            for _, data in enumerate(self.valloader, 0):
-                # get the inputs; data is a list of [inputs, labels]
-                running_loss = 0
-                inputs, labels = data
-                if train_on_gpu:
-                    inputs, labels = inputs.cuda(), labels.cuda()
-                # forward + backward + optimize
-                with torch.no_grad():
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, labels)
-                    loss_per_pixel += loss.item()/(self.hr_size[0]*self.hr_size[1]*self.batch_size)
-            loss_per_pixel /= len(self.valset)
-            print(f'Validation Loss = {loss_per_pixel:.5f}')
-            val_loss_list.append(loss_per_pixel)
 
         print('Finished Training')
         torch.save(self.model.state_dict(),'model.pt')
