@@ -48,7 +48,7 @@ class ContentLoss(nn.Module):
 
         # Freeze model parameters.
         for model_parameters in self.feature_extractor.parameters():
-            model_parameters.requires_grad = False
+            model_parameters.requires_grad = False 
 
     def forward(self, sr_tensor: torch.Tensor, hr_tensor: torch.Tensor) -> torch.Tensor:
         # Standardized operations
@@ -145,9 +145,9 @@ class Image_Upscaler():
         self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.batch_size = batch_size
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
-        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=self.batch_size,num_workers=12)
+        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=self.batch_size,num_workers=0)
         self.valset = TrainDataset(validation_dir,self.lr_size,self.hr_size)
-        self.valloader = DataLoader(self.valset,shuffle=True,batch_size=self.batch_size,num_workers=12)
+        self.valloader = DataLoader(self.valset,shuffle=True,batch_size=self.batch_size,num_workers=0)
         self.train_on_gpu = torch.cuda.is_available()
         
     def upscale_image(self,epoch,image=None,fname=None):
@@ -194,11 +194,13 @@ class Image_Upscaler():
             print('Epoch = %2d'%epoch)
             optimizer.zero_grad()   # zero the parameter gradients
             loss_per_pixel = 0
-            for _, data in enumerate(self.trainloader, 0):
+            for z, data in enumerate(self.trainloader, 0):
+                print(z)
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, lr_cb, lr_cr, labels, hr_cb, hr_cr = data
                 if train_on_gpu:
                     inputs, labels = inputs.cuda(), labels.cuda()
+                    lr_cb, lr_cr, hr_cb, hr_cr = lr_cb.cuda(), lr_cr.cuda(), hr_cb.cuda(), hr_cr.cuda()
                 # forward + backward + optimize
                 outputs = self.model(inputs)
                 outputs = torch.cat([outputs,lr_cb,lr_cr],dim=1)
@@ -231,14 +233,14 @@ class Image_Upscaler():
 
 if __name__ == "__main__":
     video = VideoReader("test2-360.mp4")
-    dataset_dir = 'Synla-4096/'
-    validation_dir = 'Synla-1024/'
+    dataset_dir = 'synla_4096/'
+    validation_dir = 'synla_4096/'
     upscale_factor = 2
-    batch_size = 128
+    batch_size = 16
     feature_model_extractor_node = "features.35"
     feature_model_normalize_mean = [0.485, 0.456, 0.406]
     feature_model_normalize_std = [0.229, 0.224, 0.225]
-    criterion = ContentLoss(feature_model_extractor_node,feature_model_normalize_mean,feature_model_normalize_std)
+    criterion = ContentLoss(feature_model_extractor_node,feature_model_normalize_mean,feature_model_normalize_std).cuda()
     model = CNN
     test_mode = 0
 
