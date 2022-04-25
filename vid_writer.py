@@ -1,7 +1,8 @@
 import ffmpeg
+import os
 
 (ffmpeg
-    .input('/home/aditya/Documents/Sem 2/Deep Learning/Video-Upscaling/video_synla/%d_output.png',r=30)
-    .output('/home/aditya/Documents/Sem 2/Deep Learning/Video-Upscaling/output.mp4',pix_fmt='yuv420p')
+    .input(os.getcwd()+'/amv-test/%d_output.png',r=30)
+    .output(os.getcwd()+'/amv-output.mp4',pix_fmt='yuv420p',preset='veryslow',tune='animation')
     .run()
 )

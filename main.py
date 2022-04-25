@@ -135,7 +135,7 @@ class Image_Upscaler():
     def train_mod(self):
         if train_on_gpu:
             self.model.cuda()
-        optimizer = optim.RMSprop(self.model.parameters(), lr=1e-4, momentum=0.9, weight_decay=1e-4)
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-5)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
         num_epoch = 200
         loss_list = []
@@ -156,7 +156,7 @@ class Image_Upscaler():
                 optimizer.step()
                 loss_per_pixel += loss.item()/(self.hr_size[0]*self.hr_size[1]*self.batch_size)
             loss_per_pixel/=len(self.trainset)
-            print(f'Train Loss = {loss_per_pixel:.5f}')
+            print(f'Train Loss = {loss_per_pixel:.8f}')
             scheduler.step(loss_per_pixel)
             loss_list.append(loss_per_pixel)
 
@@ -178,17 +178,17 @@ class Image_Upscaler():
                     loss = self.criterion(outputs, labels)
                     loss_per_pixel += loss.item()/(self.hr_size[0]*self.hr_size[1]*self.batch_size)
             loss_per_pixel /= len(self.valset)
-            print(f'Validation Loss = {loss_per_pixel:.5f}')
+            print(f'Validation Loss = {loss_per_pixel:.8f}')
             val_loss_list.append(loss_per_pixel)
 
         print('Finished Training')
         torch.save(self.model.state_dict(),'model.pt')
 
         #Plot loss vs epochs
-        loss_plotter(loss_list,val_loss_list)
-        
         np.save('training_loss',np.array(loss_list))
-    
+        np.save('validation_loss',np.array(val_loss_list))
+        loss_plotter(loss_list,val_loss_list)
+
     def load_checkpoint(self,path):
         self.model.load_state_dict = (torch.load(path))
         self.model.cuda()
@@ -202,9 +202,9 @@ if __name__ == "__main__":
     batch_size = 128
     criterion = nn.MSELoss(reduction='sum')
     model = CNN
-    test_mode = 1
+    test_mode = 0
     lr_size = (128,128) if test_mode==0 else (video.width,video.height)
-    out_dir = 'amv-test/'
+    out_dir = 'synla_train_images/'
 
     upscaler = Image_Upscaler(dataset_dir, validation_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
@@ -221,5 +221,5 @@ if __name__ == "__main__":
         final_vid.write_vid()
         
     else:
-        #upscaler.load_checkpoint("model.pt")
+        upscaler.load_checkpoint("model.pt")
         upscaler.train_mod()

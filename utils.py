@@ -38,9 +38,10 @@ class VideoWriter():
 
 
 def loss_plotter(loss_list,val_loss_list):
-    plt.plot(range(1,len(loss_list)+1),loss_list,range(1,len(loss_list)+1),val_loss_list)
+    img = plt.plot(range(1,len(loss_list)+1),loss_list,range(1,len(loss_list)+1),val_loss_list)
     plt.xlabel('Epochs')
     plt.ylabel('Average Loss Per Pixel')
     plt.title('Loss per pixel vs Epochs')
-    plt.legend('Training Loss','Validation Loss')
-    plt.show()
+    plt.legend(['Training Loss','Validation Loss'])
+    plt.imsave('/Loss_vs_epoch.png',img)
+    #plt.show()
