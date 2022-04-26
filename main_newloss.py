@@ -115,7 +115,7 @@ class CNN(nn.Module):
         for i in range(self.block_depth):
             self.conv_block.append(nn.Sequential(nn.Conv2d(self.mid_depth*2,self.mid_depth,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
                                         CReLU()))
-        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth*2,1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth*2,1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
     
     def forward(self, x):
         # conv layers
@@ -128,8 +128,9 @@ class CNN(nn.Module):
             
             depth_list.append(x)
         x = torch.cat(depth_list,axis=1)
-        x = self.upscaler(x)
-        outputs = functional.pixel_shuffle(x, self.upscale_factor)
+        x = functional.interpolate(x,scale_factor=2,mode='nearest')
+        #outputs = functional.pixel_shuffle(x, self.upscale_factor)
+        outputs = self.upscaler(x)
         outputs = outputs+functional.interpolate(old_x,scale_factor=2,mode='bilinear')
         return outputs
 
@@ -145,9 +146,9 @@ class Image_Upscaler():
         self.col_size = tuple(x*upscale_factor for x in reversed(self.lr_size))
         self.batch_size = batch_size
         self.trainset = TrainDataset(dataset_dir,self.lr_size,self.hr_size)
-        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=self.batch_size,num_workers=0)
+        self.trainloader = DataLoader(self.trainset,shuffle=True,batch_size=self.batch_size,num_workers=12)
         self.valset = TrainDataset(validation_dir,self.lr_size,self.hr_size)
-        self.valloader = DataLoader(self.valset,shuffle=True,batch_size=self.batch_size,num_workers=0)
+        self.valloader = DataLoader(self.valset,shuffle=True,batch_size=self.batch_size,num_workers=12)
         self.train_on_gpu = torch.cuda.is_available()
         
     def upscale_image(self,epoch,image=None,fname=None):
@@ -185,9 +186,9 @@ class Image_Upscaler():
     def train_mod(self):
         if train_on_gpu:
             self.model.cuda()
-        optimizer = optim.RMSprop(self.model.parameters(), lr=1e-4, momentum=0.9, weight_decay=1e-4)
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
-        num_epoch = 200
+        num_epoch = 400
         loss_list = []
         val_loss_list = []
         for epoch in range(num_epoch):  # loop over the dataset multiple times
@@ -195,7 +196,7 @@ class Image_Upscaler():
             optimizer.zero_grad()   # zero the parameter gradients
             loss_per_pixel = 0
             for z, data in enumerate(self.trainloader, 0):
-                print(z)
+                
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, lr_cb, lr_cr, labels, hr_cb, hr_cr = data
                 if train_on_gpu:
@@ -217,35 +218,55 @@ class Image_Upscaler():
             #Visualize every 20 epochs
             if (epoch+1)%20==0:
                 self.upscale_image(epoch,None,random.choice(listdir(self.dataset_dir)))
+            
+            loss_per_pixel = 0
+            #validation at end of every epoch
+            for _, data in enumerate(self.valloader, 0):
+                # get the inputs; data is a list of [inputs, labels]
+                running_loss = 0
+                inputs, lr_cb, lr_cr, labels, hr_cb, hr_cr = data
+                if train_on_gpu:
+                    inputs, labels = inputs.cuda(), labels.cuda()
+                    lr_cb, lr_cr, hr_cb, hr_cr = lr_cb.cuda(), lr_cr.cuda(), hr_cb.cuda(), hr_cr.cuda()
+                # forward + backward + optimize
+                with torch.no_grad():
+                    outputs = self.model(inputs)
+                    outputs = torch.cat([outputs,lr_cb,lr_cr],dim=1)
+                    labels = torch.cat([labels,hr_cb,hr_cr],dim=1)
+                    loss = self.criterion(outputs, labels)
+                    loss_per_pixel += loss.item()/(self.hr_size[0]*self.hr_size[1]*self.batch_size)
+            loss_per_pixel /= len(self.valset)
+            print(f'Validation Loss = {loss_per_pixel:.8f}')
+            val_loss_list.append(loss_per_pixel)
+
+            if epoch==200:
+                torch.save(self.model.state_dict(),'model_200.pt')
+
 
         print('Finished Training')
         torch.save(self.model.state_dict(),'model.pt')
 
         #Plot loss vs epochs
-        loss_plotter(loss_list,val_loss_list)
-        
         np.save('training_loss',np.array(loss_list))
-    
+        np.save('validation_loss',np.array(val_loss_list))
+        loss_plotter(loss_list,val_loss_list)
+
     def load_checkpoint(self,path):
         self.model.load_state_dict = (torch.load(path))
         self.model.cuda()
     
 
 if __name__ == "__main__":
-    video = VideoReader("test2-360.mp4")
-    dataset_dir = 'synla_4096/'
-    validation_dir = 'synla_4096/'
+    video = VideoReader("test_vid_360.mp4")
+    dataset_dir = 'Synla-4096/'
+    validation_dir = 'Synla-1024/'
     upscale_factor = 2
-    batch_size = 16
-    feature_model_extractor_node = "features.35"
-    feature_model_normalize_mean = [0.485, 0.456, 0.406]
-    feature_model_normalize_std = [0.229, 0.224, 0.225]
-    criterion = ContentLoss(feature_model_extractor_node,feature_model_normalize_mean,feature_model_normalize_std).cuda()
+    batch_size = 96
+    criterion = nn.MSELoss(reduction='sum')
     model = CNN
     test_mode = 0
-
     lr_size = (128,128) if test_mode==0 else (video.width,video.height)
-    out_dir = 'amv-test/'
+    out_dir = 'newloss_train_images/'
 
     upscaler = Image_Upscaler(dataset_dir, validation_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
@@ -258,7 +279,7 @@ if __name__ == "__main__":
             frame_upscaled = upscaler.upscale_image(frame_idx,frame)
             print(f"time taken = {time.time()-old_time:.3f}")
         video.complete()
-        final_vid = VideoWriter(out_dir+'/%d_output.png','/amv_upscaled.mp4')
+        final_vid = VideoWriter(out_dir+'/%d_output.png','/test_new.mp4')
         final_vid.write_vid()
         
     else:
