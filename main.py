@@ -65,7 +65,7 @@ class CNN(nn.Module):
         for i in range(self.block_depth):
             self.conv_block.append(nn.Sequential(nn.Conv2d(self.mid_depth*2,self.mid_depth,kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
                                         CReLU()))
-        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth*2,1 * (self.upscale_factor ** 2), kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.upscaler = nn.Conv2d(self.mid_depth*self.block_depth*2,1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
     
     def forward(self, x):
         # conv layers
@@ -78,8 +78,9 @@ class CNN(nn.Module):
             
             depth_list.append(x)
         x = torch.cat(depth_list,axis=1)
-        x = self.upscaler(x)
-        outputs = functional.pixel_shuffle(x, self.upscale_factor)
+        x = functional.interpolate(x,scale_factor=2,mode='nearest')
+        #outputs = functional.pixel_shuffle(x, self.upscale_factor)
+        outputs = self.upscaler(x)
         outputs = outputs+functional.interpolate(old_x,scale_factor=2,mode='bilinear')
         return outputs
 
@@ -195,14 +196,14 @@ class Image_Upscaler():
     
 
 if __name__ == "__main__":
-    video = VideoReader("test2-360.mp4")
-    dataset_dir = 'Synla-4096/'
-    validation_dir = 'Synla-1024/'
+    video = VideoReader("test_vid_360.mp4")
+    dataset_dir = 'synla_4096/'
+    validation_dir = 'synla_4096/'
     upscale_factor = 2
     batch_size = 128
     criterion = nn.MSELoss(reduction='sum')
     model = CNN
-    test_mode = 0
+    test_mode = 1
     lr_size = (128,128) if test_mode==0 else (video.width,video.height)
     out_dir = 'synla_train_images/'
 
@@ -217,7 +218,7 @@ if __name__ == "__main__":
             frame_upscaled = upscaler.upscale_image(frame_idx,frame)
             print(f"time taken = {time.time()-old_time:.3f}")
         video.complete()
-        final_vid = VideoWriter(out_dir+'/%d_output.png','/amv_upscaled.mp4')
+        final_vid = VideoWriter(out_dir+'/%d_output.png','/test_new.mp4')
         final_vid.write_vid()
         
     else:
