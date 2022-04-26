@@ -136,7 +136,7 @@ class Image_Upscaler():
     def train_mod(self):
         if train_on_gpu:
             self.model.cuda()
-        optimizer = optim.Adam(self.model.parameters(), lr=1e-5)
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,verbose=True)
         num_epoch = 200
         loss_list = []
@@ -188,7 +188,7 @@ class Image_Upscaler():
         #Plot loss vs epochs
         np.save('training_loss',np.array(loss_list))
         np.save('validation_loss',np.array(val_loss_list))
-        loss_plotter(loss_list,val_loss_list)
+        #loss_plotter(loss_list,val_loss_list)
 
     def load_checkpoint(self,path):
         self.model.load_state_dict = (torch.load(path))
@@ -222,5 +222,5 @@ if __name__ == "__main__":
         final_vid.write_vid()
         
     else:
-        upscaler.load_checkpoint("model.pt")
+        #upscaler.load_checkpoint("model.pt")
         upscaler.train_mod()
