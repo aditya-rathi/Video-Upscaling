@@ -43,5 +43,5 @@ def loss_plotter(loss_list,val_loss_list):
     plt.ylabel('Average Loss Per Pixel')
     plt.title('Loss per pixel vs Epochs')
     plt.legend(['Training Loss','Validation Loss'])
-    plt.imsave('/Loss_vs_epoch.png',img)
+    plt.savefig(os.getcwd()+'/Loss_vs_epoch.png')
     #plt.show()
