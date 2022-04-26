@@ -7,7 +7,7 @@ from math import log10, sqrt
 import numpy as np
 
 model = CNN(2)
-model.load_state_dict = (torch.load('model.pt'))
+model.load_state_dict = (torch.load('Final Final/400/400_epoch_checkpoint.pt'))
 model.cuda()
 for i in range(9):
     old_img = Image.open(f'Set14/{i}.png')
