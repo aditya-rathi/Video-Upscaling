@@ -7,7 +7,7 @@ from math import log10, sqrt
 import numpy as np
 
 model = CNN(2)
-model.load_state_dict = (torch.load('Final Final/400/400_epoch_checkpoint.pt'))
+model.load_state_dict = (torch.load('model.pt'))
 model.cuda()
 for i in range(9):
     old_img = Image.open(f'Set14/{i}.png')
@@ -28,6 +28,7 @@ for i in range(9):
     lr_cb = lr_cb.resize((width,height),Image.BICUBIC)
     lr_cr = lr_cr.resize((width,height),Image.BICUBIC)
     output = Image.merge("YCbCr",(outputs,lr_cb,lr_cr)).convert("RGB")
+    output.save(f'Set14/{i}_upscaled.png')
     mse = np.mean((np.asarray(old_img) - np.asarray(output)) ** 2)
     max_pixel = 255.0
     psnr = 20 * log10(max_pixel / sqrt(mse))

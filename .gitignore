@@ -37,3 +37,11 @@ amv-test/
 synla_train_images/
 
 set5.zip
+
+comparison/
+
+final_test_frames_ground/
+
+newloss_train_images/
+
+final_test_output/

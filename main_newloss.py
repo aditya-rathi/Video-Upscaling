@@ -180,7 +180,7 @@ class Image_Upscaler():
         output = Image.merge("YCbCr",(output,lr_cb,lr_cr)).convert("RGB")
         ground_name = self.out_dir+str(epoch)+'_ground.png'
         output_name = self.out_dir+str(epoch)+'_output.png'
-        hr_image.save(ground_name)
+        #hr_image.save(ground_name)
         output.save(output_name)
 
     def train_mod(self):
@@ -257,16 +257,16 @@ class Image_Upscaler():
     
 
 if __name__ == "__main__":
-    video = VideoReader("test_vid_360.mp4")
-    dataset_dir = 'Synla-4096/'
-    validation_dir = 'Synla-1024/'
+    video = VideoReader("final_test_360_trim.mp4")
+    dataset_dir = 'synla_4096/'
+    validation_dir = 'synla_4096/'
     upscale_factor = 2
     batch_size = 96
     criterion = nn.MSELoss(reduction='sum')
     model = CNN
-    test_mode = 0
+    test_mode = 1
     lr_size = (128,128) if test_mode==0 else (video.width,video.height)
-    out_dir = 'newloss_train_images/'
+    out_dir = 'final_test_output/'
 
     upscaler = Image_Upscaler(dataset_dir, validation_dir, out_dir, lr_size, upscale_factor, batch_size, criterion, model)
 
@@ -279,9 +279,9 @@ if __name__ == "__main__":
             frame_upscaled = upscaler.upscale_image(frame_idx,frame)
             print(f"time taken = {time.time()-old_time:.3f}")
         video.complete()
-        final_vid = VideoWriter(out_dir+'/%d_output.png','/test_new.mp4')
+        final_vid = VideoWriter(out_dir+'/%d_output.png','/test_new_amv.mp4')
         final_vid.write_vid()
         
     else:
-        #upscaler.load_checkpoint("model.pt")
+        upscaler.load_checkpoint("model.pt")
         upscaler.train_mod()

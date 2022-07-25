@@ -78,10 +78,10 @@ class CNN(nn.Module):
             
             depth_list.append(x)
         x = torch.cat(depth_list,axis=1)
-        x = functional.interpolate(x,scale_factor=2,mode='nearest')
+        x = functional.interpolate(x,scale_factor=self.upscale_factor,mode='nearest')
         #outputs = functional.pixel_shuffle(x, self.upscale_factor)
         outputs = self.upscaler(x)
-        outputs = outputs+functional.interpolate(old_x,scale_factor=2,mode='bilinear')
+        outputs = outputs+functional.interpolate(old_x,scale_factor=self.upscale_factor,mode='bilinear')
         return outputs
 
 class Image_Upscaler():
